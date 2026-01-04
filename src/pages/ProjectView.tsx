@@ -522,7 +522,7 @@ const TaskItem: React.FC<{
                     )}
 
                     {/* Metadata Inputs */}
-                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover/row:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-100 transition-opacity">
                         {/* Due Date (Depth 1 Only) */}
                         {depth === 1 && (
                             <div className="relative group/date">
@@ -546,23 +546,25 @@ const TaskItem: React.FC<{
 
                         {/* Estimate (Depth 1 & 2) */}
                         {depth < 3 && (
-                            <div className="flex items-center text-xs text-gray-300 bg-gray-50/50 px-1 rounded hover:bg-gray-100 transition-colors w-12 justify-end">
+                            <div className="flex items-center text-xs text-gray-300 bg-gray-50/50 px-1 rounded hover:bg-gray-100 transition-colors w-12 justify-end relative">
                                 {isListMode ? (
                                     <span className="text-right w-full">{task.estimateDays || '-'}</span>
                                 ) : (
-                                    <input
-                                        type="number"
-                                        className="w-full bg-transparent text-right outline-none text-gray-500"
+                                    <select
+                                        className="w-full bg-transparent text-right outline-none text-gray-500 appearance-none cursor-pointer z-10 relative"
                                         value={task.estimateDays || ''}
-                                        onChange={(e) => onUpdate(task.id, { estimateDays: Number(e.target.value) })}
+                                        onChange={(e) => onUpdate(task.id, { estimateDays: Number(e.target.value) || 0 })}
                                         onClick={(e) => e.stopPropagation()}
-                                        placeholder="-"
-                                        min="0"
-                                    />
+                                    >
+                                        <option value="">-</option>
+                                        {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                                            <option key={d} value={d}>{d}</option>
+                                        ))}
+                                    </select>
                                 )}
-                                <span className="ml-[1px]">d</span>
                             </div>
                         )}
+                        {depth < 3 && <span className="text-xs text-gray-300 ml-[1px]">d</span>}
                     </div>
                 </div>
 
