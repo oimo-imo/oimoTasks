@@ -149,19 +149,49 @@ const GanttView: React.FC = () => {
     }, [activeProjectIds, projects, ganttTasks]);
 
 
-    // Rendering Bar Logic (Same)
+    // Rendering Bar Logic
     const renderBar = (task: any, cellDate: Date) => {
-        let anchorDate = task.ganttAnchor?.value ? parseISO(task.ganttAnchor.value) : null;
-        if (!anchorDate && task.dueDate) anchorDate = startOfWeek(parseISO(task.dueDate), { weekStartsOn: 1 });
-        if (!anchorDate) anchorDate = task.createdAt && task.createdAt.toDate ? startOfWeek(task.createdAt.toDate(), { weekStartsOn: 1 }) : today;
+        let rawAnchorDate = task.ganttAnchor?.value ? parseISO(task.ganttAnchor.value) : null;
+        if (!rawAnchorDate && task.dueDate) rawAnchorDate = startOfWeek(parseISO(task.dueDate), { weekStartsOn: 1 });
+        if (!rawAnchorDate) rawAnchorDate = task.createdAt && task.createdAt.toDate ? startOfWeek(task.createdAt.toDate(), { weekStartsOn: 1 }) : today;
 
         const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
 
+        // Calculate Effective Start based on logic
+        let displayAnchor = rawAnchorDate!;
+        let isOverdueShift = false;
+
+        // Logic 1: Untouched Task -> Floats to Today if not done
+        // Logic 2: Manual Overdue -> Floats to Today if not done (and styling changes)
+        if (!task.done) {
+            const rawIsPast = differenceInCalendarDays(startOfDay(rawAnchorDate!), today) < 0;
+
+            if (task.ganttManuallyScheduled === false) {
+                // Untouched: Always float to Today if it would be in the past? 
+                // User said: "5日時点で薄い青のものは6日になっても...残り続ける" -> It moves with today.
+                // So if rawAnchor is Past, move to Today. 
+                // Actually, untouched usually implies "Start Now". 
+                // But wait, if created 5 days ago, rawAnchor is 5 days ago. 
+                // So YES, if rawAnchor < Today, use Today.
+                if (rawIsPast) {
+                    displayAnchor = today;
+                }
+            } else {
+                // Manual: If overdue (rawAnchor < Today), move to Today AND mark as Warning.
+                if (rawIsPast) {
+                    displayAnchor = today;
+                    isOverdueShift = true;
+                }
+            }
+        }
+
         let isStart = false;
         if (effectiveViewMode === 'week') {
-            isStart = differenceInCalendarWeeks(cellDate, anchorDate!, { weekStartsOn: 1 }) === 0;
+            isStart = differenceInCalendarWeeks(cellDate, displayAnchor, { weekStartsOn: 1 }) === 0;
         } else {
-            const effectiveStart = task.ganttAnchor?.type === 'week' ? startOfWeek(anchorDate!, { weekStartsOn: 1 }) : anchorDate!;
+            const effectiveStart = task.ganttAnchor?.type === 'week' && !isOverdueShift && task.ganttManuallyScheduled
+                ? startOfWeek(displayAnchor, { weekStartsOn: 1 })
+                : displayAnchor;
             isStart = differenceInCalendarDays(cellDate, effectiveStart) === 0;
         }
 
@@ -179,9 +209,18 @@ const GanttView: React.FC = () => {
 
             const isUntouched = task.ganttManuallyScheduled === false;
 
-            const styleClass = isUntouched
-                ? "bg-sky-50 border-sky-200 text-sky-400"
-                : "bg-indigo-200 border-indigo-300 text-indigo-800";
+            let styleClass = "";
+            if (isOverdueShift) {
+                // Light Red for Overdue-shifted
+                styleClass = "bg-rose-100 border-rose-200 text-rose-500";
+            } else if (isUntouched) {
+                // Light Blue for Untouched
+                styleClass = "bg-sky-50 border-sky-200 text-sky-400";
+            } else {
+                // Normal Manual (Blue/Indigo)
+                styleClass = "bg-indigo-200 border-indigo-300 text-indigo-800";
+                if (task.depth === 2) styleClass = "bg-indigo-100/80 border-indigo-200 text-indigo-600";
+            }
 
             return (
                 <div
@@ -189,8 +228,7 @@ const GanttView: React.FC = () => {
                     onDragStart={(e) => handleDragStart(e, task.id)}
                     className={clsx(
                         "absolute top-1 bottom-1 border rounded shadow-sm text-[10px] flex items-center justify-center font-bold px-1 overflow-hidden whitespace-nowrap z-10 cursor-move hover:brightness-95 transition-all select-none",
-                        styleClass,
-                        task.depth === 2 && !isUntouched && "bg-indigo-100/80 border-indigo-200 text-indigo-600"
+                        styleClass
                     )}
                     style={{ left: '2px', width: `calc(${widthPercent}% - 4px)` }}
                 >
