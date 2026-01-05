@@ -22,16 +22,21 @@ const Dashboard: React.FC = () => {
 
     // 4.2 Near Deadline (Depth 1, has DueDate, Not Done, Within 14 days)
     const deadlineTasks = useMemo(() => {
+        // Create a Set of archived project IDs for fast lookup
+        const archivedProjectIds = new Set(projects.filter(p => p.archived).map(p => p.id));
+
         return tasks.filter(t => {
             if (t.depth !== 1) return false;
             if (t.done) return false;
             if (!t.dueDate) return false;
+            if (archivedProjectIds.has(t.projectId)) return false; // Exclude tasks from archived projects
+
             const days = getDaysRemaining(t.dueDate);
-            return days !== null && days <= 14 && days >= 0; // "Within 14 days" usually implies future or today? logic says <= 14. 
+            return days !== null && days <= 14 && days >= 0;
         }).sort((a, b) => {
             return (new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
         });
-    }, [tasks]);
+    }, [tasks, projects]);
 
     // 4.3 Recommendations
     // Spec: Deadline tasks (Priority 1), Top 1-3 are Deadline.
@@ -40,16 +45,18 @@ const Dashboard: React.FC = () => {
         // 1. Deadline Tasks (Already sorted by date)
         const priorityLists = [...deadlineTasks];
 
+        const archivedProjectIds = new Set(projects.filter(p => p.archived).map(p => p.id));
+
         // 2. Others (Placeholder logic for now as "Touched" analysis is needed)
         // Find tasks in 'stalled' projects that haven't been touched in a while?
         // For now, let's fill with some non-focused tasks
-        const otherCandidates = tasks.filter(t => !t.isFocused && !t.done && !priorityLists.includes(t));
+        const otherCandidates = tasks.filter(t => !t.isFocused && !t.done && !priorityLists.includes(t) && !archivedProjectIds.has(t.projectId));
 
         // Simple Shuffle or just pick top 3
         const others = otherCandidates.slice(0, 3);
 
         return [...priorityLists.slice(0, 3), ...others].slice(0, 3); // Top 3 total? Spec says "Top 1-3 are Deadline". Let's show max 5 recs.
-    }, [deadlineTasks, tasks]);
+    }, [deadlineTasks, tasks, projects]);
 
 
 
