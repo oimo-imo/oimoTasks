@@ -2,14 +2,12 @@ import {
     addDoc,
     deleteDoc,
     doc,
-    getDocs,
     onSnapshot,
     orderBy,
     query,
     serverTimestamp,
     updateDoc,
-    where,
-    writeBatch
+    where
 } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db, projectsRef, tasksRef } from './firebase';
@@ -24,7 +22,6 @@ export const subscribeProjects = (userId: string, onUpdate: (projects: Project[]
     const q = query(
         projectsRef,
         where('userId', '==', userId),
-        where('archived', '==', false),
         orderBy('order', 'asc')
     );
 
@@ -61,35 +58,7 @@ export const updateProject = async (id: string, data: Partial<Project>) => {
 // Migration
 // ==========================================
 
-export const migrateAnonymousData = async (userId: string) => {
-    // 1. Projects
-    const projectsSnap = await getDocs(projectsRef);
-    const batch = writeBatch(db);
-    let batchCount = 0;
 
-    projectsSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (!data.userId) {
-            batch.update(doc.ref, { userId });
-            batchCount++;
-        }
-    });
-
-    // 2. Tasks
-    const tasksSnap = await getDocs(tasksRef);
-    tasksSnap.docs.forEach(doc => {
-        const data = doc.data();
-        if (!data.userId) {
-            batch.update(doc.ref, { userId });
-            batchCount++;
-        }
-    });
-
-    if (batchCount > 0) {
-        await batch.commit();
-        console.log(`Migrated ${batchCount} documents to user ${userId}`);
-    }
-};
 
 // ==========================================
 // Tasks

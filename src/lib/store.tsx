@@ -40,11 +40,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
                 // User logged in: specific tasks + migration
                 console.log('User logged in:', u.uid);
 
-                // 1. Migrate any anonymous data (local data without userId)
-                // This logic runs every time but is safe because it searches for missing userId
-                await repo.migrateAnonymousData(u.uid);
-
-                // 2. Subscribe to user's data
+                // 1. Subscribe to user's data
                 const unsubProjects = repo.subscribeProjects(u.uid, (data) => {
                     setProjects(data);
                     setIsLoading(false);
