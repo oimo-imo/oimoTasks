@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../lib/store';
 import clsx from 'clsx';
-import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical } from 'lucide-react';
+import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical, LogOut } from 'lucide-react';
 import type { Task, TaskDepth } from '../types';
 import { format } from 'date-fns';
 // Current AppLayout implementation uses simple conditional or NavLink from react-router-dom.
@@ -195,8 +195,27 @@ const ProjectView: React.FC = () => {
 
                 {/* Sidebar Footer: Add Project */}
                 {!showArchived && (
-                    <div className="p-3 border-t border-gray-100 bg-gray-50/50">
+                    <div className="p-3 border-t border-gray-100 bg-gray-50/50 space-y-3">
                         <AddProjectInput onAdd={addProject} />
+
+                        {/* User Profile / Logout */}
+                        <div className="flex items-center justify-between px-1 pt-2 border-t border-gray-200/50">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                                <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
+                                    {useStore().user?.email?.[0].toUpperCase() || 'U'}
+                                </div>
+                                <span className="text-xs text-gray-400 truncate max-w-[100px]" title={useStore().user?.email || ''}>
+                                    {useStore().user?.email?.split('@')[0] || 'User'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => useStore().logout()}
+                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Log Out"
+                            >
+                                <LogOut size={14} />
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

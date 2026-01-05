@@ -2,12 +2,14 @@ import {
     addDoc,
     deleteDoc,
     doc,
+    getDocs,
     onSnapshot,
     orderBy,
     query,
     serverTimestamp,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db, projectsRef, tasksRef } from './firebase';
@@ -17,8 +19,14 @@ import type { Project, Task } from '../types';
 // Projects
 // ==========================================
 
-export const subscribeProjects = (onUpdate: (projects: Project[]) => void) => {
-    const q = query(projectsRef, where('archived', '==', false), orderBy('order', 'asc'));
+export const subscribeProjects = (userId: string, onUpdate: (projects: Project[]) => void) => {
+    // Only fetch projects for this user
+    const q = query(
+        projectsRef,
+        where('userId', '==', userId),
+        where('archived', '==', false),
+        orderBy('order', 'asc')
+    );
 
     return onSnapshot(q, (snapshot) => {
         const projects = snapshot.docs.map(doc => ({
@@ -29,8 +37,9 @@ export const subscribeProjects = (onUpdate: (projects: Project[]) => void) => {
     });
 };
 
-export const addProject = async (name: string) => {
+export const addProject = async (userId: string, name: string) => {
     await addDoc(projectsRef, {
+        userId,
         name,
         status: 'active',
         order: Date.now(),
@@ -49,11 +58,49 @@ export const updateProject = async (id: string, data: Partial<Project>) => {
 };
 
 // ==========================================
+// Migration
+// ==========================================
+
+export const migrateAnonymousData = async (userId: string) => {
+    // 1. Projects
+    const projectsSnap = await getDocs(projectsRef);
+    const batch = writeBatch(db);
+    let batchCount = 0;
+
+    projectsSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (!data.userId) {
+            batch.update(doc.ref, { userId });
+            batchCount++;
+        }
+    });
+
+    // 2. Tasks
+    const tasksSnap = await getDocs(tasksRef);
+    tasksSnap.docs.forEach(doc => {
+        const data = doc.data();
+        if (!data.userId) {
+            batch.update(doc.ref, { userId });
+            batchCount++;
+        }
+    });
+
+    if (batchCount > 0) {
+        await batch.commit();
+        console.log(`Migrated ${batchCount} documents to user ${userId}`);
+    }
+};
+
+// ==========================================
 // Tasks
 // ==========================================
 
-export const subscribeTasks = (onUpdate: (tasks: Task[]) => void) => {
-    const q = query(tasksRef, orderBy('order', 'asc'));
+export const subscribeTasks = (userId: string, onUpdate: (tasks: Task[]) => void) => {
+    const q = query(
+        tasksRef,
+        where('userId', '==', userId),
+        orderBy('order', 'asc')
+    );
 
     return onSnapshot(q, (snapshot) => {
         const tasks = snapshot.docs.map(doc => ({
@@ -64,7 +111,7 @@ export const subscribeTasks = (onUpdate: (tasks: Task[]) => void) => {
     });
 };
 
-export const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
+export const addTask = async (userId: string, task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
     // User Requirement: New Depth 1/2 tasks should generate a gantt bar starting TODAY (Daily view).
     const today = new Date();
     const todayStr = format(today, 'yyyy-MM-dd');
@@ -81,6 +128,7 @@ export const addTask = async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>
 
     const finalData = {
         ...payload,
+        userId,
         touchedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()

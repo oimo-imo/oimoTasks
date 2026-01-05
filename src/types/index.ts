@@ -4,6 +4,7 @@ export type ProjectStatus = 'active' | 'chill' | 'stalled';
 
 export interface Project {
     id: string;
+    userId?: string; // Owner ID
     name: string;
     status: ProjectStatus;
     order: number;
@@ -23,6 +24,7 @@ export interface GanttAnchor {
 
 export interface Task {
     id: string;
+    userId?: string; // Owner ID
     projectId: string; // Parent Project ID
     parentTaskId?: string; // Parent Task ID (for depth 2, 3)
     depth: TaskDepth;

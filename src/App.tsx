@@ -7,6 +7,8 @@ import Review from './pages/ReviewView';
 import Login from './pages/Login';
 import { StoreProvider } from './lib/store';
 
+import { RequireAuth } from './components/layout/RequireAuth';
+
 function App() {
   return (
     <StoreProvider>
@@ -14,11 +16,14 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
 
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="projects" element={<ProjectView />} />
-            <Route path="gantt" element={<GanttView />} />
-            <Route path="review" element={<Review />} />
+          {/* Protected Routes */}
+          <Route element={<RequireAuth />}>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="projects" element={<ProjectView />} />
+              <Route path="gantt" element={<GanttView />} />
+              <Route path="review" element={<Review />} />
+            </Route>
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />
