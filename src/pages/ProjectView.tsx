@@ -428,9 +428,10 @@ const TaskItem: React.FC<{
 
     // Keyboard Navigation Logic
     // Navigates between .task-title-input and .add-task-input
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Navigates between .task-nav-item
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            const inputs = Array.from(document.querySelectorAll('.task-nav-item')) as HTMLInputElement[]; // Use common class
+            const inputs = Array.from(document.querySelectorAll('.task-nav-item')) as (HTMLInputElement | HTMLTextAreaElement)[]; // Use common class
             const currentIndex = inputs.indexOf(e.currentTarget);
 
             if (currentIndex === -1) return;
@@ -455,9 +456,7 @@ const TaskItem: React.FC<{
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setLocalTitle(e.target.value);
-    };
+
 
     return (
         <div
@@ -519,23 +518,43 @@ const TaskItem: React.FC<{
                 <div className="flex-1 min-w-0 flex items-center gap-2 h-8">
                     {isListMode ? (
                         <span className={clsx(
-                            "font-medium truncate transition-all text-sm flex-1",
+                            "font-medium transition-all text-sm flex-1 whitespace-pre-wrap break-words", // Removed truncate, added wrap
                             depth === 1 ? "text-gray-800" : "text-gray-600",
                             task.done && "line-through text-gray-300"
                         )}>
                             {task.title}
                         </span>
                     ) : (
-                        <input
+                        <textarea
+                            ref={(el) => {
+                                if (el) {
+                                    el.style.height = 'auto'; // Reset to auto to get correct scrollHeight
+                                    el.style.height = `${el.scrollHeight}px`;
+                                }
+                            }}
                             className={clsx(
-                                "task-nav-item bg-transparent outline-none w-full transition-all text-sm truncate", // Added task-nav-item for unified nav
+                                "task-nav-item bg-transparent outline-none w-full transition-all text-sm resize-none overflow-hidden block", // Removed truncate, added resize-none
                                 depth === 1 ? "text-gray-800 font-medium" : "text-gray-600",
                                 task.done && "line-through text-gray-300"
                             )}
+                            rows={1}
                             value={localTitle}
-                            onChange={handleChange}
+                            onChange={(e) => {
+                                setLocalTitle(e.target.value);
+                                e.target.style.height = 'auto';
+                                e.target.style.height = `${e.target.scrollHeight}px`;
+                            }}
                             onBlur={handleBlur}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={(e) => {
+                                // Delegate arrow keys to shared handler (needs type cast update if handler expects HTMLInputElement)
+                                // Handle Enter to blur (submit)
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    e.currentTarget.blur();
+                                }
+                                // We can cast e to any to reuse handleKeyDown or update handleKeyDown to accept HTMLTextAreaElement
+                                handleKeyDown(e as any);
+                            }}
                             placeholder="Task Name"
                         />
                     )}
