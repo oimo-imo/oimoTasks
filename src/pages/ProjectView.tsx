@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../lib/store';
 import clsx from 'clsx';
-import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical, LogOut, Pencil, List } from 'lucide-react';
+import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical, Pencil, List, Eye, EyeOff } from 'lucide-react';
 import type { Task, TaskDepth } from '../types';
 import { format } from 'date-fns';
 // Current AppLayout implementation uses simple conditional or NavLink from react-router-dom.
@@ -23,6 +23,7 @@ const ProjectView: React.FC = () => {
     const [showArchived, setShowArchived] = useState(false); // Toggle to show archived projects
     const [isListMode, setIsListMode] = useState(false); // Toggle for Read-only List Mode
     const [filterHotOnly, setFilterHotOnly] = useState(false); // Sidebar filter for Hot projects
+    const [hideCompleted, setHideCompleted] = useState(false); // Toggle to hide completed tasks
     const hasAutoSelected = React.useRef(false);
 
     // Initial Selection
@@ -69,8 +70,16 @@ const ProjectView: React.FC = () => {
 
     const projectTasks = useMemo(() => {
         if (!selectedProjectId) return [];
-        return tasks.filter(t => t.projectId === selectedProjectId).sort((a, b) => a.order - b.order);
-    }, [tasks, selectedProjectId]);
+        let filtered = tasks.filter(t => t.projectId === selectedProjectId);
+        if (hideCompleted) {
+            // If hiding completed, we should also consider if a parent is hidden?
+            // Usually, if a parent is not done but child is done, child is hidden.
+            // If parent is done and hidden, children are inevitably hidden (not rendered).
+            // Filter out done tasks.
+            filtered = filtered.filter(t => !t.done);
+        }
+        return filtered.sort((a, b) => a.order - b.order);
+    }, [tasks, selectedProjectId, hideCompleted]);
 
     const calculateProgress = (pid: string) => {
         const pTasks = tasks.filter(t => t.projectId === pid);
@@ -197,25 +206,6 @@ const ProjectView: React.FC = () => {
                 {!showArchived && (
                     <div className="p-3 border-t border-gray-100 bg-gray-50/50 space-y-3">
                         <AddProjectInput onAdd={addProject} />
-
-                        {/* User Profile / Logout */}
-                        <div className="flex items-center justify-between px-1 pt-2 border-t border-gray-200/50">
-                            <div className="flex items-center gap-2 overflow-hidden">
-                                <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
-                                    {useStore().user?.email?.[0].toUpperCase() || 'U'}
-                                </div>
-                                <span className="text-xs text-gray-400 truncate max-w-[100px]" title={useStore().user?.email || ''}>
-                                    {useStore().user?.email?.split('@')[0] || 'User'}
-                                </span>
-                            </div>
-                            <button
-                                onClick={() => useStore().logout()}
-                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Log Out"
-                            >
-                                <LogOut size={14} />
-                            </button>
-                        </div>
                     </div>
                 )}
             </div>
@@ -291,6 +281,17 @@ const ProjectView: React.FC = () => {
                                         <List size={16} />
                                     </button>
                                 </div>
+                                <div className="w-px h-4 bg-gray-200 mx-1" />
+                                <button
+                                    onClick={() => setHideCompleted(!hideCompleted)}
+                                    className={clsx(
+                                        "p-2 rounded-lg transition-colors",
+                                        hideCompleted ? "bg-indigo-50 text-indigo-600" : "text-gray-300 hover:bg-gray-100"
+                                    )}
+                                    title={hideCompleted ? "Show Completed Tasks" : "Hide Completed Tasks"}
+                                >
+                                    {hideCompleted ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                                 <div className="w-px h-4 bg-gray-200 mx-1" />
                                 <button
                                     onClick={() => {
