@@ -240,6 +240,34 @@ const GanttView: React.FC = () => {
     };
 
 
+    const monthHeaders = useMemo(() => {
+        if (timeHeaders.length === 0) return [];
+
+        const months: { label: string; colSpan: number }[] = [];
+        let currentMonthLabel = '';
+        let currentCount = 0;
+
+        timeHeaders.forEach(h => {
+            const label = format(h.date, 'M月');
+            if (label !== currentMonthLabel) {
+                if (currentMonthLabel !== '') {
+                    months.push({ label: currentMonthLabel, colSpan: currentCount });
+                }
+                currentMonthLabel = label;
+                currentCount = 1;
+            } else {
+                currentCount++;
+            }
+        });
+        if (currentCount > 0) {
+            months.push({ label: currentMonthLabel, colSpan: currentCount });
+        }
+        return months;
+    }, [timeHeaders]);
+
+    const isSaturday = (date: Date) => date.getDay() === 6;
+    const isSunday = (date: Date) => date.getDay() === 0;
+
     return (
         <div className="h-full flex flex-col bg-white overflow-hidden">
             {/* Controls Header - Responsive Grid/Flex */}
@@ -288,7 +316,7 @@ const GanttView: React.FC = () => {
                             <Calendar size={14} /> Weekly
                         </button>
                         <button
-                            onClick={() => { setIsPlanningMode(true); setOffset(0); }}
+                            onClick={() => { setIsPlanningMode(true); setViewMode('day'); setOffset(0); }}
                             className={clsx("px-3 py-1 rounded-md text-xs md:text-sm font-medium transition-all flex items-center gap-1 whitespace-nowrap", isPlanningMode ? "bg-white shadow-sm text-green-600" : "text-gray-500 hover:text-gray-700")}
                         >
                             <Map size={14} /> 6 Mo
@@ -310,17 +338,31 @@ const GanttView: React.FC = () => {
             <div className="flex-1 overflow-auto custom-scrollbar relative bg-white">
                 <table className="w-full border-collapse">
                     <thead className="sticky top-0 bg-gray-50 z-40 shadow-sm">
+                        {/* Month Row */}
                         <tr>
-                            <th className="p-3 text-left min-w-[220px] border-b border-r border-gray-200 font-bold text-gray-500 text-sm pl-6 bg-gray-50 sticky left-0 z-50">Task</th>
-                            {timeHeaders.map(h => (
-                                <th key={h.date.toString()} className={clsx(
-                                    "p-2 border-b border-r border-gray-200 font-mono text-sm text-gray-600 bg-gray-50 text-center",
-                                    viewMode === 'week' ? "min-w-[120px]" : "min-w-[40px]"
-                                )}>
-                                    <div className="font-bold">{h.label}</div>
-                                    {h.subLabel && <div className="text-[10px] text-gray-400 font-normal">{h.subLabel}</div>}
+                            <th className="p-1 min-w-[220px] bg-gray-50 border-b border-r border-gray-200 sticky left-0 z-50"></th>
+                            {monthHeaders.map((m, i) => (
+                                <th key={i} colSpan={m.colSpan} className="p-1 text-xs text-gray-500 font-bold border-b border-r border-gray-200 text-left pl-2 bg-gray-50">
+                                    {m.label}
                                 </th>
                             ))}
+                        </tr>
+                        <tr>
+                            <th className="p-3 text-left min-w-[220px] border-b border-r border-gray-200 font-bold text-gray-500 text-sm pl-6 bg-gray-50 sticky left-0 z-50">Task</th>
+                            {timeHeaders.map(h => {
+                                const isSat = isSaturday(h.date);
+                                const isSun = isSunday(h.date);
+                                return (
+                                    <th key={h.date.toString()} className={clsx(
+                                        "p-2 border-b border-r border-gray-200 font-mono text-sm text-gray-600 text-center",
+                                        viewMode === 'week' && !isPlanningMode ? "min-w-[120px]" : "min-w-[40px]",
+                                        isSat ? "bg-blue-100" : isSun ? "bg-red-100" : "bg-gray-50"
+                                    )}>
+                                        <div className="font-bold">{h.label}</div>
+                                        {h.subLabel && <div className="text-[10px] text-gray-500 font-medium">{h.subLabel}</div>}
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody>
@@ -340,16 +382,23 @@ const GanttView: React.FC = () => {
                                                     <span className="truncate">{d1.title}</span>
                                                 </div>
                                             </td>
-                                            {timeHeaders.map(h => (
-                                                <td
-                                                    key={h.date.toString()}
-                                                    className="border-r border-gray-100 border-b border-gray-100 p-0 relative h-10 hover:bg-gray-50 transition-colors overflow-visible"
-                                                    onDragOver={handleDragOver}
-                                                    onDrop={(e) => handleDrop(e, h.date)}
-                                                >
-                                                    {renderBar(d1, h.date)}
-                                                </td>
-                                            ))}
+                                            {timeHeaders.map(h => {
+                                                const isSat = isSaturday(h.date);
+                                                const isSun = isSunday(h.date);
+                                                return (
+                                                    <td
+                                                        key={h.date.toString()}
+                                                        className={clsx(
+                                                            "border-r border-gray-100 border-b border-gray-100 p-0 relative h-10 transition-colors overflow-visible",
+                                                            isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
+                                                        )}
+                                                        onDragOver={handleDragOver}
+                                                        onDrop={(e) => handleDrop(e, h.date)}
+                                                    >
+                                                        {renderBar(d1, h.date)}
+                                                    </td>
+                                                );
+                                            })}
                                         </tr>
                                         {d1.children.map(d2 => (
                                             <tr key={d2.id} className="hover:bg-indigo-50/10 transition-colors group/row">
@@ -358,17 +407,23 @@ const GanttView: React.FC = () => {
                                                         <span className="text-gray-300">└</span> {d2.title}
                                                     </div>
                                                 </td>
-                                                {timeHeaders.map(h => (
-                                                    <td
-                                                        key={h.date.toString()}
-                                                        className="border-r border-gray-100 border-b border-gray-100 p-0 relative h-8 hover:bg-gray-50 transition-colors overflow-visible"
-                                                        onDragOver={handleDragOver}
-                                                        onDrop={(e) => handleDrop(e, h.date)}
-                                                    >
-                                                        {renderBar(d2, h.date)}
-                                                    </td>
-                                                ))}
-
+                                                {timeHeaders.map(h => {
+                                                    const isSat = isSaturday(h.date);
+                                                    const isSun = isSunday(h.date);
+                                                    return (
+                                                        <td
+                                                            key={h.date.toString()}
+                                                            className={clsx(
+                                                                "border-r border-gray-100 border-b border-gray-100 p-0 relative h-8 transition-colors overflow-visible",
+                                                                isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
+                                                            )}
+                                                            onDragOver={handleDragOver}
+                                                            onDrop={(e) => handleDrop(e, h.date)}
+                                                        >
+                                                            {renderBar(d2, h.date)}
+                                                        </td>
+                                                    );
+                                                })}
                                             </tr>
                                         ))}
                                     </React.Fragment>
