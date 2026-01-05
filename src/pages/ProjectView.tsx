@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../lib/store';
 import clsx from 'clsx';
-import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical, LogOut } from 'lucide-react';
+import { Target, Trash2, Square, CheckSquare, ChevronDown, ChevronRight as ChevronRightIcon, Plus, Calendar, ChevronLeft, Archive, FolderPlus, FolderOpen, Flame, GripVertical, LogOut, Pencil, List } from 'lucide-react';
 import type { Task, TaskDepth } from '../types';
 import { format } from 'date-fns';
 // Current AppLayout implementation uses simple conditional or NavLink from react-router-dom.
@@ -269,17 +269,28 @@ const ProjectView: React.FC = () => {
                                     <Flame size={18} fill={activeProject.isHot ? "currentColor" : "none"} />
                                 </button>
                                 <div className="w-px h-4 bg-gray-200 mx-1" />
-                                <button
-                                    onClick={() => setIsListMode(!isListMode)}
-                                    className={clsx(
-                                        "px-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5",
-                                        isListMode ? "bg-indigo-50 text-indigo-600" : "text-gray-400 hover:bg-gray-100"
-                                    )}
-                                    title={isListMode ? "Show Edit Inputs" : "Show List View"}
-                                >
-                                    {isListMode ? <CheckSquare size={14} /> : <Square size={14} />}
-                                    {isListMode ? 'List Mode' : 'Edit Mode'}
-                                </button>
+                                <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                                    <button
+                                        onClick={() => setIsListMode(false)}
+                                        className={clsx(
+                                            "p-1.5 rounded-md transition-all",
+                                            !isListMode ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400 hover:text-gray-600"
+                                        )}
+                                        title="Edit Mode"
+                                    >
+                                        <Pencil size={15} />
+                                    </button>
+                                    <button
+                                        onClick={() => setIsListMode(true)}
+                                        className={clsx(
+                                            "p-1.5 rounded-md transition-all",
+                                            isListMode ? "bg-white text-indigo-600 shadow-sm" : "text-gray-400 hover:text-gray-600"
+                                        )}
+                                        title="List Mode"
+                                    >
+                                        <List size={16} />
+                                    </button>
+                                </div>
                                 <div className="w-px h-4 bg-gray-200 mx-1" />
                                 <button
                                     onClick={() => {
