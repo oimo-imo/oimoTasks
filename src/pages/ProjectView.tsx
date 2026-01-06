@@ -47,6 +47,20 @@ const ProjectView: React.FC = () => {
         }
     }, [selectedProjectId, activeProject]);
 
+    // IME Fix: Local Project Name State
+    const [localProjectName, setLocalProjectName] = useState('');
+    React.useEffect(() => {
+        if (activeProject) {
+            setLocalProjectName(activeProject.name);
+        }
+    }, [activeProject?.id, activeProject?.name]);
+
+    const handleProjectNameBlur = () => {
+        if (activeProject && localProjectName !== activeProject.name) {
+            updateProject(activeProject.id, { name: localProjectName });
+        }
+    };
+
     // Sort & Filter projects
     const sortedProjects = useMemo(() => {
         let targetProjects = projects.filter(p => showArchived ? p.archived : !p.archived);
@@ -312,8 +326,9 @@ const ProjectView: React.FC = () => {
                         <div className="mb-2">
                             <input
                                 className="w-full text-2xl md:text-3xl font-extrabold text-gray-900 bg-transparent outline-none placeholder-gray-300 border-b border-transparent focus:border-indigo-200 transition-all px-1 -mx-1"
-                                value={activeProject.name}
-                                onChange={(e) => updateProject(activeProject.id, { name: e.target.value })}
+                                value={localProjectName}
+                                onChange={(e) => setLocalProjectName(e.target.value)}
+                                onBlur={handleProjectNameBlur}
                                 placeholder="Project Name"
                             />
                         </div>
