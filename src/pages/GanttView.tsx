@@ -113,26 +113,196 @@ const GanttView: React.FC = () => {
         e.dataTransfer.dropEffect = 'move';
     };
 
+
+    // ... (helper functions)
+    // Helper to get task range (Fixed or Auto)
+    const getTaskRange = (task: any, children: any[]) => {
+        let start = task.ganttAnchor?.value ? parseISO(task.ganttAnchor.value) : null;
+        if (!start && task.dueDate) start = startOfWeek(parseISO(task.dueDate), { weekStartsOn: 1 });
+        if (!start && task.createdAt) {
+            const d = (task.createdAt as any).toDate ? (task.createdAt as any).toDate() : task.createdAt;
+            start = startOfWeek(d, { weekStartsOn: 1 });
+        }
+        if (!start) start = today;
+
+        let end = addDays(start!, task.estimateDays || 1);
+        let isAuto = false;
+
+        // Auto-Range Mode if no estimate and has children
+        if ((!task.estimateDays || task.estimateDays === 0) && children && children.length > 0) {
+            isAuto = true;
+            const childRanges = children.map(c => {
+                let cS = c.ganttAnchor?.value ? parseISO(c.ganttAnchor.value) : null;
+                if (!cS && c.dueDate) cS = startOfWeek(parseISO(c.dueDate), { weekStartsOn: 1 });
+                if (!cS && c.createdAt) {
+                    const d = (c.createdAt as any).toDate ? (c.createdAt as any).toDate() : c.createdAt;
+                    cS = startOfWeek(d, { weekStartsOn: 1 });
+                }
+                if (!cS) cS = today;
+
+                // Untouched logic for children (same as renderBar logic)
+                if (!c.done && c.ganttManuallyScheduled === false && differenceInCalendarDays(startOfDay(cS!), today) < 0) {
+                    cS = today;
+                }
+
+                const cE = addDays(cS!, c.estimateDays || 1);
+                return { start: cS, end: cE };
+            });
+
+            const minStart = childRanges.reduce((min, r) => r.start < min ? r.start : min, childRanges[0].start);
+            const maxEnd = childRanges.reduce((max, r) => r.end > max ? r.end : max, childRanges[0].end);
+
+            start = minStart;
+            end = maxEnd;
+        }
+
+        return { start: start!, end: end, isAuto };
+    };
+
+
     const handleDrop = async (e: React.DragEvent, targetDate: Date) => {
         e.preventDefault();
         const taskId = e.dataTransfer.getData('taskId');
         if (!taskId) return;
 
-        // If Planning Mode, we are technically in 'day' context now (requested by user).
+        // Find task and check if it's a parent in Range Mode
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        const children = tasks.filter(t => t.parentTaskId === taskId && !t.done);
+
+        // Planning Mode Adjustment
         const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
 
-        const newAnchorValue = format(
-            effectiveViewMode === 'week' ? startOfWeek(targetDate, { weekStartsOn: 1 }) : targetDate,
-            'yyyy-MM-dd'
-        );
+        // Determine Mode
+        const { start: currentStart, isAuto } = getTaskRange(task, children);
 
-        await updateTask(taskId, {
-            ganttAnchor: { type: effectiveViewMode, value: newAnchorValue },
-            ganttManuallyScheduled: true
+        if (isAuto && children.length > 0) {
+            // Bulk Move
+            const deltaDays = differenceInCalendarDays(targetDate, currentStart);
+            if (deltaDays === 0) return;
+
+            await Promise.all(children.map(child => {
+                let cS = child.ganttAnchor?.value ? parseISO(child.ganttAnchor.value) : null;
+                // Fallback logic duplicated for safety
+                if (!cS && child.dueDate) cS = startOfWeek(parseISO(child.dueDate), { weekStartsOn: 1 });
+                if (!cS && child.createdAt) {
+                    const d = (child.createdAt as any).toDate ? (child.createdAt as any).toDate() : child.createdAt;
+                    cS = startOfWeek(d, { weekStartsOn: 1 });
+                }
+                if (!cS) cS = today;
+
+                // If untouched and moving force manual
+                const newDate = addDays(cS!, deltaDays);
+                const newAnchor = format(newDate, 'yyyy-MM-dd');
+
+                return updateTask(child.id, {
+                    ganttAnchor: { type: child.ganttAnchor?.type || 'day', value: newAnchor },
+                    ganttManuallyScheduled: true
+                });
+            }));
+
+        } else {
+            // Normal Move
+            const newAnchorValue = format(
+                effectiveViewMode === 'week' ? startOfWeek(targetDate, { weekStartsOn: 1 }) : targetDate,
+                'yyyy-MM-dd'
+            );
+
+            await updateTask(taskId, {
+                ganttAnchor: { type: effectiveViewMode, value: newAnchorValue },
+                ganttManuallyScheduled: true
+            });
+        }
+    };
+
+    // Resize Logic
+    const [resizingTaskId, setResizingTaskId] = useState<string | null>(null);
+    const [resizeStartX, setResizeStartX] = useState(0);
+    const [resizeOriginalEstimate, setResizeOriginalEstimate] = useState(0);
+
+    // Updating estimate directly might cause flicker or confusing DB writes. 
+    // Better to track visual delta and commit on mouseup.
+    // For simplicity in this iteration, let's update local state 'previewEstimate' if possible, or just commit on DragEnd if we use dnd.
+    // BUT user wanted "Drag edge". Standard Mouse Events are best.
+
+    // We need a ref to track temp estimate for the resizing task to render it effectively.
+    const [resizePreviewEstimate, setResizePreviewEstimate] = useState<number | null>(null);
+
+    // Global Mouse Handlers for Resize
+    React.useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!resizingTaskId) return;
+
+            const diff = e.clientX - resizeStartX;
+            // Determine cell width approximation. 
+            // In Week mode: 1 cell ~ ? px. In Day mode: 1 cell ~ ? px. 
+            // This is hard because cell width is flexible in CSS (min-w). 
+            // We can approximate or measure? 
+            // Let's assume standard min-widths: Day=40px, Week=120px. 
+            // Wait, CSS says min-w-[40px] and min-w-[120px].
+
+            const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
+            const daysPerPixel = effectiveViewMode === 'week' ? 7 / 120 : 1 / 40;
+
+            const diffDays = Math.round(diff * daysPerPixel);
+            const newEst = Math.max(1, resizeOriginalEstimate + diffDays);
+
+            setResizePreviewEstimate(newEst);
+        };
+
+        const handleMouseUp = async () => {
+            if (resizingTaskId && resizePreviewEstimate !== null) {
+                await updateTask(resizingTaskId, {
+                    estimateDays: resizePreviewEstimate,
+                    ganttManuallyScheduled: true // Lock it if it was auto
+                });
+            }
+            setResizingTaskId(null);
+            setResizePreviewEstimate(null);
+        };
+
+        if (resizingTaskId) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [resizingTaskId, resizeStartX, resizeOriginalEstimate, resizePreviewEstimate, viewMode, isPlanningMode, updateTask]);
+
+    const handleResizeStart = (e: React.MouseEvent, task: any, children: any[]) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setResizingTaskId(task.id);
+        setResizeStartX(e.clientX);
+
+        // If Auto Mode, calculate current duration in days as original estimate
+        let validEstimate = task.estimateDays || 0;
+        if (validEstimate === 0 && children.length > 0) {
+            const { start, end } = getTaskRange(task, children);
+            validEstimate = differenceInCalendarDays(end, start);
+        }
+        if (validEstimate === 0) validEstimate = 1;
+
+        setResizeOriginalEstimate(validEstimate);
+        setResizePreviewEstimate(validEstimate);
+        setResizePreviewEstimate(validEstimate);
+    };
+
+    const handleResizeReset = async (e: React.MouseEvent, task: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Reset to 0 -> Auto Range Mode
+        await updateTask(task.id, {
+            estimateDays: 0
         });
     };
 
-    // Grouping Logic (Same)
+
+
+    // Grouping Logic
     const groupedTasks = useMemo(() => {
         const groups = activeProjectIds.map(pid => {
             const project = projects.find(p => p.id === pid);
@@ -148,96 +318,143 @@ const GanttView: React.FC = () => {
         return groups.filter(g => g.tasks.length > 0);
     }, [activeProjectIds, projects, ganttTasks]);
 
-
     // Rendering Bar Logic
-    const renderBar = (task: any, cellDate: Date) => {
-        let rawAnchorDate = task.ganttAnchor?.value ? parseISO(task.ganttAnchor.value) : null;
-        if (!rawAnchorDate && task.dueDate) rawAnchorDate = startOfWeek(parseISO(task.dueDate), { weekStartsOn: 1 });
-        if (!rawAnchorDate) rawAnchorDate = task.createdAt && task.createdAt.toDate ? startOfWeek(task.createdAt.toDate(), { weekStartsOn: 1 }) : today;
+    const renderBar = (task: any, children: any[], cellDate: Date) => {
+        // ... (existing helper logic)
 
-        const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
+        let displayAnchor: Date;
+        let isAuto = false;
+        let estimate = task.estimateDays || 0;
 
-        // Calculate Effective Start based on logic
-        let displayAnchor = rawAnchorDate!;
-        let isOverdueShift = false;
+        // If Resizing this task, use preview
+        if (resizingTaskId === task.id && resizePreviewEstimate !== null) {
+            // When resizing, we effectively treat it as Manual/Fixed mode visually
+            estimate = resizePreviewEstimate;
+            // Anchor is standard
+            let raw = task.ganttAnchor?.value ? parseISO(task.ganttAnchor.value) : null;
+            // ... fallback logic ...
+            if (!raw && task.dueDate) raw = startOfWeek(parseISO(task.dueDate), { weekStartsOn: 1 });
+            if (!raw && task.createdAt) {
+                const d = (task.createdAt as any).toDate ? (task.createdAt as any).toDate() : task.createdAt;
+                raw = startOfWeek(d, { weekStartsOn: 1 });
+            }
+            if (!raw) raw = today;
 
-        // Logic 1: Untouched Task -> Floats to Today if not done
-        // Logic 2: Manual Overdue -> Floats to Today if not done (and styling changes)
-        if (!task.done) {
-            const rawIsPast = differenceInCalendarDays(startOfDay(rawAnchorDate!), today) < 0;
+            // If it WAS auto, we need the calculated start as the anchor for visualization during resize
+            if ((!task.estimateDays || task.estimateDays === 0) && children.length > 0) {
+                const { start } = getTaskRange(task, children);
+                raw = start;
+            }
+            displayAnchor = raw!;
 
-            if (task.ganttManuallyScheduled === false) {
-                // Untouched: Always float to Today if it would be in the past? 
-                // User said: "5日時点で薄い青のものは6日になっても...残り続ける" -> It moves with today.
-                // So if rawAnchor is Past, move to Today. 
-                // Actually, untouched usually implies "Start Now". 
-                // But wait, if created 5 days ago, rawAnchor is 5 days ago. 
-                // So YES, if rawAnchor < Today, use Today.
-                if (rawIsPast) {
-                    displayAnchor = today;
-                }
+        } else {
+            // Standard Render
+            const range = getTaskRange(task, children);
+            displayAnchor = range.start;
+            isAuto = range.isAuto;
+            // Re-calc estimate for display if auto
+            if (isAuto) {
+                estimate = differenceInCalendarDays(range.end, range.start);
             } else {
-                // Manual: If overdue (rawAnchor < Today), move to Today AND mark as Warning.
-                if (rawIsPast) {
-                    displayAnchor = today;
-                    isOverdueShift = true;
-                }
+                // Manual
+                estimate = task.estimateDays || 1;
             }
         }
+
+        // Overdue shift logic adjustment for Auto? 
+        // Auto ranges are based on children. If children are shifted, Auto Range shifts. 
+        // So we don't need special overdrive logic for Auto Parent itself, just rely on computed `start`.
+        // BUT for Manual tasks (Basic logic), we retain the existing shift logic.
+
+        let isOverdueShift = false;
+        if (!isAuto && !task.done) {
+            // ... existing overdue logic ...
+            const rawIsPast = differenceInCalendarDays(startOfDay(displayAnchor), today) < 0;
+            if (task.ganttManuallyScheduled !== false && rawIsPast) {
+                displayAnchor = today;
+                isOverdueShift = true;
+            }
+            // Untouched logic ...
+            if (task.ganttManuallyScheduled === false && rawIsPast) {
+                displayAnchor = today;
+            }
+        }
+
+        const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
 
         let isStart = false;
         if (effectiveViewMode === 'week') {
             isStart = differenceInCalendarWeeks(cellDate, displayAnchor, { weekStartsOn: 1 }) === 0;
         } else {
-            const effectiveStart = task.ganttAnchor?.type === 'week' && !isOverdueShift && task.ganttManuallyScheduled
-                ? startOfWeek(displayAnchor, { weekStartsOn: 1 })
-                : displayAnchor;
-            isStart = differenceInCalendarDays(cellDate, effectiveStart) === 0;
+            // Simplified effectiveStart logic for readability
+            isStart = differenceInCalendarDays(cellDate, displayAnchor) === 0;
         }
 
         if (isStart) {
-            const estimate = task.estimateDays || 1;
             let widthCells = 1;
 
             if (effectiveViewMode === 'week') {
-                widthCells = Math.max(1, Math.ceil(estimate / 5));
+                widthCells = Math.max(1, Math.ceil(estimate / 5)); // Approx 5 days/week work? Or 7? Calendar view usually 7.
+                // CSS min-w is fixed, so pure ratio. 
+                // If estimate is 7 days, it's 1 cell. 14 days = 2 cells.
+                widthCells = Math.max(1, Math.ceil(estimate / 7));
             } else {
                 widthCells = estimate;
             }
 
             const widthPercent = widthCells * 100;
-
-            const isUntouched = task.ganttManuallyScheduled === false;
+            const isUntouched = task.ganttManuallyScheduled === false && !isAuto;
 
             let styleClass = "";
-            if (isOverdueShift) {
-                // Light Red for Overdue-shifted
+            let borderStyle = "";
+
+            if (isAuto) {
+                // Auto Range Style
+                styleClass = "bg-indigo-50/50 text-indigo-400";
+                borderStyle = "border-2 border-indigo-300 border-dashed";
+            } else if (isOverdueShift) {
                 styleClass = "bg-rose-100 border-rose-200 text-rose-500";
+                borderStyle = "border";
             } else if (isUntouched) {
-                // Light Blue for Untouched
                 styleClass = "bg-sky-50 border-sky-200 text-sky-400";
+                borderStyle = "border";
             } else {
-                // Normal Manual (Blue/Indigo)
                 styleClass = "bg-indigo-200 border-indigo-300 text-indigo-800";
                 if (task.depth === 2) styleClass = "bg-indigo-100/80 border-indigo-200 text-indigo-600";
+                borderStyle = "border";
             }
 
             return (
                 <div
-                    draggable
+                    draggable={!resizingTaskId} // Disable drag if resizing
                     onDragStart={(e) => handleDragStart(e, task.id)}
                     className={clsx(
-                        "absolute top-1 bottom-1 border rounded shadow-sm text-[10px] flex items-center justify-center font-bold px-1 overflow-hidden whitespace-nowrap z-10 cursor-move hover:brightness-95 transition-all select-none",
-                        styleClass
+                        "absolute top-1 bottom-1 rounded shadow-sm text-[10px] flex items-center justify-center font-bold px-1 overflow-visible whitespace-nowrap z-10 select-none group/bar",
+                        !resizingTaskId && "cursor-move hover:brightness-95 transition-all",
+                        styleClass,
+                        borderStyle
                     )}
                     style={{ left: '2px', width: `calc(${widthPercent}% - 4px)` }}
                 >
-                    {task.estimateDays ? `${task.estimateDays}d` : ''}
+                    {/* Content */}
+                    <span className="truncate overflow-hidden w-full text-center">
+                        {estimate > 0 ? `${estimate}d` : ''}
+                    </span>
+
+                    {/* Resize Handle */}
+                    <div
+                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-black/10 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                        onMouseDown={(e) => handleResizeStart(e, task, children)}
+                        onDoubleClick={(e) => handleResizeReset(e, task)}
+                    >
+                        <div className="w-0.5 h-3 bg-black/20 rounded-full" />
+                    </div>
                 </div>
             );
         }
         return null;
     };
+
 
 
     const monthHeaders = useMemo(() => {
@@ -419,7 +636,7 @@ const GanttView: React.FC = () => {
                                                                     <AlertTriangle size={12} className="text-amber-600 fill-amber-600/20" />
                                                                 </div>
                                                             )}
-                                                            {renderBar(d1, h.date)}
+                                                            {renderBar(d1, d1.children, h.date)}
                                                         </td>
                                                     );
                                                 })}
@@ -467,7 +684,7 @@ const GanttView: React.FC = () => {
                                                                             <AlertTriangle size={10} className="text-amber-600 fill-amber-600/20" />
                                                                         </div>
                                                                     )}
-                                                                    {renderBar(d2, h.date)}
+                                                                    {renderBar(d2, [], h.date)}
                                                                 </td>
                                                             );
                                                         })}
