@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { format, addWeeks, startOfWeek, parseISO, differenceInCalendarWeeks, addDays, startOfDay, differenceInCalendarDays } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, CalendarDays, Filter, Flame, Map } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, CalendarDays, Filter, Flame, Map, Flag, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 
 type ViewMode = 'week' | 'day';
@@ -373,61 +373,110 @@ const GanttView: React.FC = () => {
                                         {group.project?.name}
                                     </td>
                                 </tr>
-                                {group.tasks.map(d1 => (
-                                    <React.Fragment key={d1.id}>
-                                        <tr className="hover:bg-indigo-50/10 transition-colors group/row">
-                                            <td className="p-2 border-r border-gray-100 text-sm font-medium text-gray-800 border-b border-gray-100 pl-6 sticky left-0 bg-white group-hover/row:bg-indigo-50/10 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                                <div className="flex items-center gap-2 max-w-[200px]">
-                                                    <span className={clsx("w-1.5 h-1.5 rounded-full flex-shrink-0", d1.done ? "bg-gray-300" : "bg-indigo-500")}></span>
-                                                    <span className="truncate">{d1.title}</span>
-                                                </div>
-                                            </td>
-                                            {timeHeaders.map(h => {
-                                                const isSat = isSaturday(h.date);
-                                                const isSun = isSunday(h.date);
-                                                return (
-                                                    <td
-                                                        key={h.date.toString()}
-                                                        className={clsx(
-                                                            "border-r border-gray-100 border-b border-gray-100 p-0 relative h-10 transition-colors overflow-visible",
-                                                            isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
-                                                        )}
-                                                        onDragOver={handleDragOver}
-                                                        onDrop={(e) => handleDrop(e, h.date)}
-                                                    >
-                                                        {renderBar(d1, h.date)}
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                        {d1.children.map(d2 => (
-                                            <tr key={d2.id} className="hover:bg-indigo-50/10 transition-colors group/row">
-                                                <td className="p-1 border-r border-gray-100 text-xs text-gray-500 border-b border-gray-100 pl-10 sticky left-0 bg-white group-hover/row:bg-indigo-50/10 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                                                    <div className="max-w-[180px] truncate flex items-center gap-1">
-                                                        <span className="text-gray-300">└</span> {d2.title}
+                                {group.tasks.map(d1 => {
+                                    const dueDate = d1.dueDate ? parseISO(d1.dueDate) : null;
+                                    const estimate = d1.estimateDays || 0;
+                                    const startDeadline = dueDate ? addDays(dueDate, -estimate) : null;
+
+                                    return (
+                                        <React.Fragment key={d1.id}>
+                                            <tr className="hover:bg-indigo-50/10 transition-colors group/row">
+                                                <td className="p-2 border-r border-gray-100 text-sm font-medium text-gray-800 border-b border-gray-100 pl-6 sticky left-0 bg-white group-hover/row:bg-indigo-50/10 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                                    <div className="flex items-center gap-2 max-w-[200px]">
+                                                        <span className={clsx("w-1.5 h-1.5 rounded-full flex-shrink-0", d1.done ? "bg-gray-300" : "bg-indigo-500")}></span>
+                                                        <span className="truncate">{d1.title}</span>
                                                     </div>
                                                 </td>
                                                 {timeHeaders.map(h => {
                                                     const isSat = isSaturday(h.date);
                                                     const isSun = isSunday(h.date);
+                                                    const isDue = dueDate && differenceInCalendarDays(h.date, dueDate) === 0;
+                                                    // Hide Start Deadline if it overlaps with Due Date
+                                                    const isStartDead = startDeadline && differenceInCalendarDays(h.date, startDeadline) === 0 && !isDue;
+
+                                                    // Danger Zone: After Start Deadline AND Before Due Date
+                                                    const isDanger = startDeadline && dueDate &&
+                                                        differenceInCalendarDays(h.date, startDeadline) > 0 &&
+                                                        differenceInCalendarDays(h.date, dueDate) < 0;
+
                                                     return (
                                                         <td
                                                             key={h.date.toString()}
                                                             className={clsx(
-                                                                "border-r border-gray-100 border-b border-gray-100 p-0 relative h-8 transition-colors overflow-visible",
-                                                                isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
+                                                                "border-r border-gray-100 border-b border-gray-100 p-0 relative h-10 transition-colors overflow-visible",
+                                                                isDue ? "!bg-red-500/20" : isStartDead ? "!bg-yellow-500/20" : isDanger ? "!bg-yellow-100/40" : isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
                                                             )}
                                                             onDragOver={handleDragOver}
                                                             onDrop={(e) => handleDrop(e, h.date)}
                                                         >
-                                                            {renderBar(d2, h.date)}
+                                                            {isDue && (
+                                                                <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
+                                                                    <Flag size={12} className="text-red-600 fill-red-600/20" />
+                                                                </div>
+                                                            )}
+                                                            {isStartDead && (
+                                                                <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
+                                                                    <AlertTriangle size={12} className="text-amber-600 fill-amber-600/20" />
+                                                                </div>
+                                                            )}
+                                                            {renderBar(d1, h.date)}
                                                         </td>
                                                     );
                                                 })}
                                             </tr>
-                                        ))}
-                                    </React.Fragment>
-                                ))}
+                                            {d1.children.map(d2 => {
+                                                const d2DueDate = d2.dueDate ? parseISO(d2.dueDate) : null;
+                                                const d2Estimate = d2.estimateDays || 0;
+                                                const d2StartDeadline = d2DueDate ? addDays(d2DueDate, -d2Estimate) : null;
+
+                                                return (
+                                                    <tr key={d2.id} className="hover:bg-indigo-50/10 transition-colors group/row">
+                                                        <td className="p-1 border-r border-gray-100 text-xs text-gray-500 border-b border-gray-100 pl-10 sticky left-0 bg-white group-hover/row:bg-indigo-50/10 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                                                            <div className="max-w-[180px] truncate flex items-center gap-1">
+                                                                <span className="text-gray-300">└</span> {d2.title}
+                                                            </div>
+                                                        </td>
+                                                        {timeHeaders.map(h => {
+                                                            const isSat = isSaturday(h.date);
+                                                            const isSun = isSunday(h.date);
+                                                            const isDue = d2DueDate && differenceInCalendarDays(h.date, d2DueDate) === 0;
+                                                            // Hide Start Deadline if it overlaps with Due Date
+                                                            const isStartDead = d2StartDeadline && differenceInCalendarDays(h.date, d2StartDeadline) === 0 && !isDue;
+
+                                                            const isDanger = d2StartDeadline && d2DueDate &&
+                                                                differenceInCalendarDays(h.date, d2StartDeadline) > 0 &&
+                                                                differenceInCalendarDays(h.date, d2DueDate) < 0;
+
+                                                            return (
+                                                                <td
+                                                                    key={h.date.toString()}
+                                                                    className={clsx(
+                                                                        "border-r border-gray-100 border-b border-gray-100 p-0 relative h-8 transition-colors overflow-visible",
+                                                                        isDue ? "!bg-red-500/20" : isStartDead ? "!bg-yellow-500/20" : isDanger ? "!bg-yellow-100/40" : isSat ? "bg-blue-50/60 hover:bg-blue-100" : isSun ? "bg-red-50/60 hover:bg-red-100" : "hover:bg-gray-50"
+                                                                    )}
+                                                                    onDragOver={handleDragOver}
+                                                                    onDrop={(e) => handleDrop(e, h.date)}
+                                                                >
+                                                                    {isDue && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
+                                                                            <Flag size={10} className="text-red-600 fill-red-600/20" />
+                                                                        </div>
+                                                                    )}
+                                                                    {isStartDead && (
+                                                                        <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
+                                                                            <AlertTriangle size={10} className="text-amber-600 fill-amber-600/20" />
+                                                                        </div>
+                                                                    )}
+                                                                    {renderBar(d2, h.date)}
+                                                                </td>
+                                                            );
+                                                        })}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    );
+                                })}
                             </React.Fragment>
                         ))}
                     </tbody>
