@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../lib/store';
 import { format, addWeeks, startOfWeek, parseISO, differenceInCalendarWeeks, addDays, startOfDay, differenceInCalendarDays } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar, CalendarDays, Filter, Flame, Map, Flag, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, CalendarDays, Filter, Flame, Map, Flag, AlertTriangle, Layers } from 'lucide-react';
 import clsx from 'clsx';
 
 type ViewMode = 'week' | 'day';
@@ -13,6 +13,7 @@ const GanttView: React.FC = () => {
     const [offset, setOffset] = useState(0);
     const [filterActiveOnly, setFilterActiveOnly] = useState(true);
     const [filterHotOnly, setFilterHotOnly] = useState(false);
+    const [filterDepth1Only, setFilterDepth1Only] = useState(false);
 
     // ... (Project filtering same)
     const activeProjectIds = useMemo(() => {
@@ -514,6 +515,16 @@ const GanttView: React.FC = () => {
                         >
                             <Flame size={14} fill={filterHotOnly ? "currentColor" : "none"} /> Hot
                         </button>
+                        <button
+                            onClick={() => setFilterDepth1Only(!filterDepth1Only)}
+                            className={clsx(
+                                "px-2 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition-all",
+                                filterDepth1Only ? "bg-purple-50 border-purple-100 text-purple-600" : "bg-white border-gray-200 text-gray-400 hover:border-gray-300"
+                            )}
+                            title="Show 1st Level Tasks Only"
+                        >
+                            <Layers size={14} /> 1st
+                        </button>
                     </div>
 
                     <div className="hidden md:block w-px h-6 bg-gray-200" />
@@ -641,7 +652,7 @@ const GanttView: React.FC = () => {
                                                     );
                                                 })}
                                             </tr>
-                                            {d1.children.map(d2 => {
+                                            {!filterDepth1Only && d1.children.map(d2 => {
                                                 const d2DueDate = d2.dueDate ? parseISO(d2.dueDate) : null;
                                                 const d2Estimate = d2.estimateDays || 0;
                                                 const d2StartDeadline = d2DueDate ? addDays(d2DueDate, -d2Estimate) : null;
