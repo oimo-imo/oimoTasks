@@ -7,7 +7,8 @@ import {
     query,
     serverTimestamp,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { db, projectsRef, tasksRef } from './firebase';
@@ -119,6 +120,20 @@ export const updateTask = async (id: string, data: Partial<Task>, markTouched: b
     }
 
     await updateDoc(ref, updates);
+};
+
+export const updateTasksBatch = async (updates: { id: string, data: Partial<Task> }[]) => {
+    const batch = writeBatch(db);
+
+    updates.forEach(({ id, data }) => {
+        const ref = doc(db, 'tasks', id);
+        batch.update(ref, {
+            ...data,
+            updatedAt: serverTimestamp()
+        });
+    });
+
+    await batch.commit();
 };
 
 export const deleteTask = async (id: string) => {
