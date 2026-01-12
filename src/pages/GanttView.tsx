@@ -370,12 +370,20 @@ const GanttView: React.FC = () => {
         let isOverdueShift = false;
         if (!isAuto && !task.done) {
             // ... existing overdue logic ...
+            // ... existing overdue logic ...
             const rawIsPast = differenceInCalendarDays(startOfDay(displayAnchor), today) < 0;
-            if (task.ganttManuallyScheduled !== false && rawIsPast) {
+
+            // New Logic: Check if the *End* of the task is in the past.
+            // If estimate is 1 (1 day duration), end is Start + 1 day.
+            // If End <= Today, it means the task "should have finished yesterday or before".
+            const calculatedEndDate = addDays(displayAnchor, estimate);
+            const isEndPast = differenceInCalendarDays(startOfDay(calculatedEndDate), today) <= 0;
+
+            if (task.ganttManuallyScheduled !== false && isEndPast) {
                 displayAnchor = today;
                 isOverdueShift = true;
             }
-            // Untouched logic ...
+            // Untouched logic: If start is past, move to today (Keep "Backlog" feel)
             if (task.ganttManuallyScheduled === false && rawIsPast) {
                 displayAnchor = today;
             }
