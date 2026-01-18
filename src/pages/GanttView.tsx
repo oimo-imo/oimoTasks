@@ -368,12 +368,10 @@ const GanttView: React.FC = () => {
         // BUT for Manual tasks (Basic logic), we retain the existing shift logic.
 
         let isOverdueShift = false;
-        if (!isAuto && !task.done) {
-            // ... existing overdue logic ...
-            // ... existing overdue logic ...
-            const rawIsPast = differenceInCalendarDays(startOfDay(displayAnchor), today) < 0;
 
-            // New Logic: Check if the *End* of the task is in the past.
+        // New Logic: Only shift if the task is NOT auto-range AND is NOT completed
+        if (!isAuto && !task.done) {
+            // Check if the *End* of the task is in the past.
             // If estimate is 1 (1 day duration), end is Start + 1 day.
             // If End <= Today, it means the task "should have finished yesterday or before".
             const calculatedEndDate = addDays(displayAnchor, estimate);
@@ -384,31 +382,74 @@ const GanttView: React.FC = () => {
                 isOverdueShift = true;
             }
             // Untouched logic: If start is past, move to today (Keep "Backlog" feel)
+            // Wait, this was the OLD logic that initiated the shift if Start was past.
+            // User wanted: "Only shift if Estimate End Date is past".
+            // So we should REMOVE the shift for just "Start is Past".
+            // If it's untouched/backlog, we usually want it to float to today.
+            // BUT if the user explicitly changed the logic to "Allow past start", then we should respect that?
+            // "Old: Start Day Past -> Move to Today" (This was the backlog behavior)
+            // "New: End Day Past -> Move to Today"
+            // So if Start is past but End is future, it stays in past. 
+            // So this block:
+            /*
             if (task.ganttManuallyScheduled === false && rawIsPast) {
                 displayAnchor = today;
+            }
+            */
+            // should be modified or removed?
+            // If it's untouched, it usually means "I haven't planned it yet".
+            // If I created a task 3 days ago and didn't touch it, it should probably float to today?
+            // User request says: "Old: Start date past -> Today. New: Estimate End date past -> Today".
+            // So even for untouched tasks, we apply the new rule.
+
+            // Check if untouched task's END is past
+            if (task.ganttManuallyScheduled === false) {
+                const rawIsEndPast = differenceInCalendarDays(startOfDay(calculatedEndDate), today) <= 0;
+                if (rawIsEndPast) {
+                    displayAnchor = today;
+                }
             }
         }
 
         const effectiveViewMode = isPlanningMode ? 'day' : viewMode;
 
         let isStart = false;
+        let isCarryOver = false;
+        let effectiveEstimate = estimate;
+
+        // 1. Check strict start match
         if (effectiveViewMode === 'week') {
             isStart = differenceInCalendarWeeks(cellDate, displayAnchor, { weekStartsOn: 1 }) === 0;
         } else {
-            // Simplified effectiveStart logic for readability
             isStart = differenceInCalendarDays(cellDate, displayAnchor) === 0;
         }
 
-        if (isStart) {
+        // 2. Check Carry-Over (Start is before ViewStart, but End is after ViewStart)
+        // Only if we are at the FIRST column of the view
+        const isFirstColumn = effectiveViewMode === 'week'
+            ? differenceInCalendarWeeks(cellDate, startDate, { weekStartsOn: 1 }) === 0
+            : differenceInCalendarDays(cellDate, startDate) === 0;
+
+        if (isFirstColumn && !isStart) {
+            // If valid bar, displayAnchor < startDate AND (displayAnchor + estimate) > startDate
+            const startDiff = differenceInCalendarDays(startDate, displayAnchor);
+            if (startDiff > 0) {
+                // Started before view. Check if it ends after view start
+                // If estimate is days
+                if (estimate > startDiff) {
+                    isCarryOver = true;
+                    effectiveEstimate = estimate - startDiff;
+                }
+            }
+        }
+
+        if (isStart || isCarryOver) {
             let widthCells = 1;
 
             if (effectiveViewMode === 'week') {
-                widthCells = Math.max(1, Math.ceil(estimate / 5)); // Approx 5 days/week work? Or 7? Calendar view usually 7.
-                // CSS min-w is fixed, so pure ratio. 
-                // If estimate is 7 days, it's 1 cell. 14 days = 2 cells.
-                widthCells = Math.max(1, Math.ceil(estimate / 7));
+                widthCells = Math.max(1, Math.ceil(effectiveEstimate / 7));
             } else {
-                widthCells = estimate;
+                widthCells = effectiveEstimate;
             }
 
             const widthPercent = widthCells * 100;
@@ -425,6 +466,8 @@ const GanttView: React.FC = () => {
                 styleClass = "bg-rose-100 border-rose-200 text-rose-500";
                 borderStyle = "border";
             } else if (isUntouched) {
+                // Untouched logic: If start is past, move to today (Keep "Backlog" feel)
+                // We keep the visual style for untouched tasks
                 styleClass = "bg-sky-50 border-sky-200 text-sky-400";
                 borderStyle = "border";
             } else {
@@ -433,15 +476,20 @@ const GanttView: React.FC = () => {
                 borderStyle = "border";
             }
 
+            // Should we indicate it's a "Partial" bar? 
+            // Maybe remove left rounded corner?
+            const roundedClass = isCarryOver ? "rounded-r rounded-l-none" : "rounded";
+
             return (
                 <div
-                    draggable={!resizingTaskId} // Disable drag if resizing
+                    draggable={!resizingTaskId && !isCarryOver} // Disable drag if resizing or if it's a partial bar (dragging partial might be confusing logic-wise, but maybe okay? Let's disable for safety effectively moving anchor)
                     onDragStart={(e) => handleDragStart(e, task.id)}
                     className={clsx(
-                        "absolute top-1 bottom-1 rounded shadow-sm text-[10px] flex items-center justify-center font-bold px-1 overflow-visible whitespace-nowrap z-10 select-none group/bar",
-                        !resizingTaskId && "cursor-move hover:brightness-95 transition-all",
+                        "absolute top-1 bottom-1 shadow-sm text-[10px] flex items-center justify-center font-bold px-1 overflow-visible whitespace-nowrap z-10 select-none group/bar",
+                        !resizingTaskId && !isCarryOver && "cursor-move hover:brightness-95 transition-all",
                         styleClass,
-                        borderStyle
+                        borderStyle,
+                        roundedClass
                     )}
                     style={{ left: '2px', width: `calc(${widthPercent}% - 4px)` }}
                 >
@@ -450,7 +498,7 @@ const GanttView: React.FC = () => {
                         {estimate > 0 ? `${estimate}d` : ''}
                     </span>
 
-                    {/* Resize Handle */}
+                    {/* Resize Handle - Only show if it's the actual end of the bar? Yes, logic handles right edge. */}
                     <div
                         className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-black/10 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 transition-opacity"
                         onMouseDown={(e) => handleResizeStart(e, task, children)}
